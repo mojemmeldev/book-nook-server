@@ -1,0 +1,7 @@
+1. intall and setup -> npm init --y
+2. install -> npm i mongodb express dotenv cors
+3. change the package.json -> type: module
+4. express declear and import
+5. mongodb connect from -> mongodb website 
+6. create -> .env file and keep mongodb id & pass
+7. import -> import 'dotenv/config'
