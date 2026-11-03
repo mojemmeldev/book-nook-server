@@ -1,14 +1,21 @@
 import express from 'express';
-import 'dotenv/config'
+import 'dotenv/config';
 import cors from 'cors';
+import { MongoClient, ObjectId } from 'mongodb';
 
-import { MongoClient } from 'mongodb';
 const app = express();
 const PORT = 8000;
-app.use(express.json());
-app.use(cors());
 
-
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 const client = new MongoClient(process.env.MONGO_URI);
 export async function connectToMongoDB() {
@@ -23,29 +30,53 @@ export async function connectToMongoDB() {
 
 const connectClient = await connectToMongoDB();
 const db = connectClient.db('book-nook');
-const bookCollections =db.collection("books")
+const bookCollections = db.collection("books");
+const bookBorrowsCollections = db.collection("booksBorrows");
 
-
-
-app.post("/books", async (req,res)=>{
-    const books= req.body;
+app.post("/books", async (req, res) => {
+  try {
+    const books = req.body;
     const result = await bookCollections.insertOne(books);
-    res.send(result)
-})
+    res.send(result);
+  } catch (err) {
+    console.error("Error inserting book:", err);
+    res.status(500).send({ error: "Failed to insert book" });
+  }
+});
 
+app.get("/books/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await bookCollections.findOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Book not found" });
+  }
+});
 
-app.get("/books", async (req,res)=>{
+app.get("/books/borrows", async (req, res) => {
+  try {
+    const borrowsData = req.body;
+    const result = await bookBorrowsCollections.insertOne(borrowsData);
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Borrow failed" });
+  }
+});
+
+app.get("/books", async (req, res) => {
+  try {
     const result = await bookCollections.find().toArray();
-    res.send(result)
-})
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Failed to fetch books" });
+  }
+});
 
+app.get('/', (req, res) => {
+  res.send("Hlw World");
+});
 
-app.get('/', (req,res)=>{
-    res.send("Hlw World")
-})
-
-
-
-app.listen(PORT, ()=>{
-    console.log(`server is running on port ${PORT}`);
-})
+app.listen(PORT, () => {
+  console.log(`server is running on port ${PORT}`);
+});
