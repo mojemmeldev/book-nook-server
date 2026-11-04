@@ -80,6 +80,17 @@ app.patch("/books/:id", async (req, res) => {
   }
 });
 
+
+app.delete("/books/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await bookCollections.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Book not found" });
+  }
+});
+
 app.get("/books/borrows", async (req, res) => {
   try {
     const borrowsData = req.body;
