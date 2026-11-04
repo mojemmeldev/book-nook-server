@@ -44,6 +44,18 @@ app.post("/books", async (req, res) => {
   }
 });
 
+
+app.post("/borrows", async (req, res) => {
+  try {
+    const borrows = req.body;
+    const result = await bookCollections.insertOne(borrows);
+    res.send(result);
+  } catch (err) {
+    console.error("Error inserting book:", err);
+    res.status(500).send({ error: "Failed to insert book" });
+  }
+});
+
 app.get("/my-books/:email", async (req, res) => {
   try {
     const email = req.params.email;
