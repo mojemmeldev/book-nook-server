@@ -68,6 +68,18 @@ app.get("/books/:id", async (req, res) => {
   }
 });
 
+
+app.patch("/books/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateData= req.body;
+    const result = await bookCollections.updateOne({ _id: new ObjectId(id) },{$set:updateData});
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Book not found" });
+  }
+});
+
 app.get("/books/borrows", async (req, res) => {
   try {
     const borrowsData = req.body;
