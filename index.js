@@ -44,6 +44,20 @@ app.post("/books", async (req, res) => {
   }
 });
 
+app.get("/my-books/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    console.log("email",email);
+    const result = await bookCollections.find({creatorEmail:email}).toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error find book:", err);
+    res.status(500).send({ error: "Failed to find book" });
+  }
+});
+
+
+
 app.get("/books/:id", async (req, res) => {
   try {
     const id = req.params.id;
