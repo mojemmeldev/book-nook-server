@@ -101,6 +101,17 @@ app.get("/books/borrows", async (req, res) => {
   }
 });
 
+
+app.delete("/books/borrows/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await bookBorrowsCollections.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Borrow failed" });
+  }
+});
+
 app.get("/books", async (req, res) => {
   try {
     const result = await bookCollections.find().toArray();
