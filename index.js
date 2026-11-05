@@ -2,6 +2,7 @@ import express from 'express';
 import 'dotenv/config';
 import cors from 'cors';
 import { MongoClient, ObjectId } from 'mongodb';
+import {createRemoteJWKSet, jwtVerify} from "jose";
 
 const app = express();
 const PORT = 8000;
@@ -31,7 +32,121 @@ export async function connectToMongoDB() {
 const connectClient = await connectToMongoDB();
 const db = connectClient.db('book-nook');
 const bookCollections = db.collection("books");
-const bookBorrowsCollections = db.collection("booksBorrows");
+const borrowsCollections = db.collection("borrows");
+
+//middleware
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.FRONTEND_URI}/api/auth/jwks`)
+);
+
+const verifyToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).send({
+        message: "Unauthorized: Token missing",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: process.env.FRONTEND_URI,
+      audience: process.env.FRONTEND_URI,
+    });
+
+    req.user = payload;
+
+    next();
+  } catch (error) {
+    console.error("JWT Verification Error:", error.message);
+
+    return res.status(401).send({
+      message: "Unauthorized: Invalid or expired token",
+    });
+  }
+};
+
+
+
+app.get("/my-books/:email", verifyToken, async (req, res) => {
+  try {
+    const email = req.params.email;
+    
+     if (email!=req.user.email){
+      return res.status(401).send({ message: "Unauthorized: Invalid or expired token", });
+    }
+    console.log("email",email);
+    const result = await bookCollections.find({creatorEmail:email}).toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error find book:", err);
+    res.status(500).send({ error: "Failed to find book" });
+  }
+});
+
+// borrows method//
+
+
+// Create a new borrow — called by the "Confirm Borrow" form on the Book Details page.
+// Body: { bookId, bookTitle, bookImage, userName, email, borrowDate, returnDate, status }
+app.post("/books/borrows", verifyToken, async (req, res) => {
+  try {
+    const borrowsData = req.body;
+    const result = await borrowsCollections.insertOne(borrowsData);
+    res.send(result);
+  } catch (err) {
+    console.error("Error inserting borrow:", err);
+    res.status(500).send({ error: "Borrow failed" });
+  }
+});
+
+
+
+
+// All borrows of one user — matches on the `email` field the borrow form stores.
+app.get("/books/borrows/:email", verifyToken, async (req, res) => {
+  try {
+    const email = req.params.email;
+    if (email!=req.user.email){
+      return res.status(401).send({ message: "Unauthorized: Invalid or expired token", });
+    }
+    const result = await borrowsCollections.find({ email: email }).toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error finding borrows:", err);
+    res.status(500).send({ error: "Failed to find borrows" });
+  }
+});
+
+
+// Return a book — deletes the borrow document so it disappears from My Borrows.
+app.delete("/books/borrows/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await borrowsCollections.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    console.error("Error deleting borrow:", err);
+    res.status(500).send({ error: "Borrow failed" });
+  }
+});
+
+
+
+//book all method//
+
+
+app.get("/books", async (req, res) => {
+  try {
+    const result = await bookCollections.find().toArray();
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ error: "Failed to fetch books" });
+  }
+});
 
 app.post("/books", async (req, res) => {
   try {
@@ -44,31 +159,7 @@ app.post("/books", async (req, res) => {
   }
 });
 
-
-app.post("/borrows", async (req, res) => {
-  try {
-    const borrows = req.body;
-    const result = await bookCollections.insertOne(borrows);
-    res.send(result);
-  } catch (err) {
-    console.error("Error inserting book:", err);
-    res.status(500).send({ error: "Failed to insert book" });
-  }
-});
-
-app.get("/my-books/:email", async (req, res) => {
-  try {
-    const email = req.params.email;
-    console.log("email",email);
-    const result = await bookCollections.find({creatorEmail:email}).toArray();
-    res.send(result);
-  } catch (err) {
-    console.error("Error find book:", err);
-    res.status(500).send({ error: "Failed to find book" });
-  }
-});
-
-
+ 
 
 app.get("/books/:id", async (req, res) => {
   try {
@@ -103,35 +194,14 @@ app.delete("/books/:id", async (req, res) => {
   }
 });
 
-app.get("/books/borrows", async (req, res) => {
-  try {
-    const borrowsData = req.body;
-    const result = await bookBorrowsCollections.insertOne(borrowsData);
-    res.send(result);
-  } catch (err) {
-    res.status(500).send({ error: "Borrow failed" });
-  }
-});
 
 
-app.delete("/books/borrows/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const result = await bookBorrowsCollections.deleteOne({ _id: new ObjectId(id) });
-    res.send(result);
-  } catch (err) {
-    res.status(500).send({ error: "Borrow failed" });
-  }
-});
 
-app.get("/books", async (req, res) => {
-  try {
-    const result = await bookCollections.find().toArray();
-    res.send(result);
-  } catch (err) {
-    res.status(500).send({ error: "Failed to fetch books" });
-  }
-});
+
+
+
+
+
 
 app.get('/', (req, res) => {
   res.send("Hlw World");
