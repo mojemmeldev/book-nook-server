@@ -2,7 +2,7 @@ import express from 'express';
 import 'dotenv/config';
 import cors from 'cors';
 import { MongoClient, ObjectId } from 'mongodb';
-import {createRemoteJWKSet, jwtVerify} from "jose";
+import {createRemoteJWKSet, decodeProtectedHeader, importJWK, jwtVerify} from "jose";
 
 const app = express();
 const PORT = 8000;
@@ -36,9 +36,51 @@ const borrowsCollections = db.collection("borrows");
 
 //middleware
 
-const JWKS = createRemoteJWKSet(
-  new URL(`${process.env.FRONTEND_URI}/api/auth/jwks`)
-);
+// Origins that are allowed to mint tokens: FRONTEND_URI (comma separated, so
+// it can list both the deployed and the local frontend) plus the local dev
+// origins — the same ones the CORS config above already trusts.
+const ALLOWED_ORIGINS = [
+  ...String(process.env.FRONTEND_URI || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+
+// Remote JWKS endpoint — only reachable while the frontend is deployed.
+// Kept as a fallback for keys that are not in MongoDB yet.
+const remoteJWKS = ALLOWED_ORIGINS[0]
+  ? createRemoteJWKSet(new URL(`${ALLOWED_ORIGINS[0]}/api/auth/jwks`))
+  : null;
+
+// better-auth keeps its signing keys in the shared `book-nook-user` database
+// (same Atlas cluster this server already connects to). Reading the public key
+// from there lets the deployed backend verify tokens issued by a frontend
+// running on localhost — a remote fetch of http://localhost:3000/api/auth/jwks
+// from Vercel can never succeed, which is what made every request 401.
+const jwksCollections = client.db("book-nook-user").collection("jwks");
+
+const resolveSigningKey = async (header) => {
+  if (header.kid) {
+    // better-auth stores `_id` as an ObjectId while the JWT `kid` is a string.
+    const storedKey = await jwksCollections.findOne(
+      ObjectId.isValid(header.kid)
+        ? { _id: new ObjectId(header.kid) }
+        : { _id: header.kid },
+    );
+    if (storedKey) {
+      return importJWK(
+        JSON.parse(storedKey.publicKey),
+        storedKey.alg || header.alg || "EdDSA",
+      );
+    }
+  }
+  if (!remoteJWKS) {
+    throw new Error("No signing key available for this token");
+  }
+  return remoteJWKS.getKey(header);
+};
 
 const verifyToken = async (req, res, next) => {
   try {
@@ -51,10 +93,11 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+    const key = await resolveSigningKey(decodeProtectedHeader(token));
 
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: process.env.FRONTEND_URI,
-      audience: process.env.FRONTEND_URI,
+    const { payload } = await jwtVerify(token, key, {
+      issuer: ALLOWED_ORIGINS,
+      audience: ALLOWED_ORIGINS,
     });
 
     req.user = payload;
